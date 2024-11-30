@@ -1,0 +1,198 @@
+MODULE main
+VAR
+    -- Traffic light states for North-South and East-West directions
+    traffic_NS : {green, yellow, red};
+    traffic_EW : {green, yellow, red};
+
+    -- Pedestrian signals for North-South and East-West directions
+    pedestrian_NS : {WALK, DONT_WALK};
+    pedestrian_EW : {WALK, DONT_WALK};
+
+    -- Pedestrian countdown timers for each direction
+    pedestrian_countdown_NS : 0..5;
+    pedestrian_countdown_EW : 0..5;
+
+    -- Traffic sensors for each lane
+    sensor_north : boolean;
+    sensor_south : boolean;
+    sensor_east : boolean;
+    sensor_west : boolean;
+
+    -- Pedestrian button presses for each direction
+    ped_button_NS : boolean;
+    ped_button_EW : boolean;
+
+    -- Traffic light timers for North-South and East-West directions
+    timer_NS : 0..10;
+    timer_EW : 0..10;
+
+ASSIGN
+    -- Initial states
+    init(traffic_NS) := green;
+    init(traffic_EW) := red;
+    init(pedestrian_NS) := DONT_WALK;
+    init(pedestrian_EW) := DONT_WALK;
+    init(pedestrian_countdown_NS) := 0;
+    init(pedestrian_countdown_EW) := 0;
+    init(timer_NS) := 0;
+    init(timer_EW) := 0;
+
+    -- Timer increments and resets
+    next(timer_NS) := case
+        timer_NS = 10 : 0;
+        TRUE : timer_NS + 1;
+    esac;
+
+    next(timer_EW) := case
+        timer_EW = 10 : 0;
+        TRUE : timer_EW + 1;
+    esac;
+
+    -- Traffic light transitions for North-South (NS) and East-West (EW) directions
+    next(traffic_NS) := case
+        -- Stay green if a vehicle is detected and the timer is under 10
+        (traffic_NS = green & (sensor_north | sensor_south) & timer_NS < 10) : green;
+        
+        -- Transition to yellow after timer reaches 10
+        (traffic_NS = green & timer_NS = 10) : yellow;
+        
+        -- Transition to red after being yellow and timer resets
+        (traffic_NS = yellow & timer_NS = 10) : red;
+
+        -- Transition back to green when East-West is red and timer resets
+        (traffic_NS = red & traffic_EW = red & timer_NS = 0) : green;
+        
+        -- Default to stay in the current state
+        TRUE : traffic_NS;
+    esac;
+
+    next(traffic_EW) := case
+        -- Stay green if a vehicle is detected and the timer is under 10
+        (traffic_EW = green & (sensor_east | sensor_west) & timer_EW < 10) : green;
+       
+        -- Transition to yellow after timer reaches 10
+        (traffic_EW = green & timer_EW = 10) : yellow;
+       
+        -- Transition to red after being yellow and timer resets
+        (traffic_EW = yellow & timer_EW = 10) : red;
+        
+        -- Transition back to green when North-South is red and timer resets
+        (traffic_EW = red & traffic_NS = red & timer_EW = 0) : green;
+        
+        -- Default to stay in the current state
+        TRUE : traffic_EW;
+    esac;
+
+    -- Pedestrian light transitions for North-South (NS) and East-West (EW) directions
+    next(pedestrian_NS) := case
+        -- Set to WALK when North-South traffic light is red and button is pressed
+        (traffic_NS = red & ped_button_NS & pedestrian_NS = DONT_WALK) : WALK;
+
+        -- Set back to DONT_WALK when North-South traffic light turns green or countdown reaches 0
+        (traffic_NS = green | pedestrian_countdown_NS = 0) : DONT_WALK;
+
+        -- Stay in current state if no other condition is met
+        TRUE : pedestrian_NS;
+    esac;
+
+    next(pedestrian_EW) := case
+        -- Set to WALK when East-West traffic light is red and button is pressed
+        (traffic_EW = red & ped_button_EW & pedestrian_EW = DONT_WALK) : WALK;
+        
+        -- Set back to DONT_WALK when East-West traffic light turns green or countdown reaches 0
+        (traffic_EW = green | pedestrian_countdown_EW = 0) : DONT_WALK;
+        
+        -- Stay in current state if no other condition is met
+        TRUE : pedestrian_EW;
+    esac;
+
+    -- Pedestrian light count down timer for North-South (NS) and East-West (EW) directions
+    next(pedestrian_countdown_NS) := case
+        -- Start countdown when pedestrian signal is WALK
+        (pedestrian_NS = WALK & pedestrian_countdown_NS > 0) : pedestrian_countdown_NS - 1;
+        
+        -- Reset countdown when pedestrian signal changes to DONT_WALK
+        pedestrian_NS = DONT_WALK : 5;
+
+        -- Maintain current countdown value
+        TRUE : pedestrian_countdown_NS;
+    esac;
+
+    next(pedestrian_countdown_EW) := case
+        -- Start countdown when pedestrian signal is WALK
+        (pedestrian_EW = WALK & pedestrian_countdown_EW > 0) : pedestrian_countdown_EW - 1;
+        
+        -- Reset countdown when pedestrian signal changes to DONT_WALK
+        pedestrian_EW = DONT_WALK : 5;
+
+        -- Maintain current countdown value
+        TRUE : pedestrian_countdown_EW;
+    esac;
+
+    -- Reset North-South (NS) and East-West (EW) pedestrian buttons when WALK state is active
+    next(ped_button_NS) := case
+        pedestrian_NS = WALK : FALSE;
+        TRUE : ped_button_NS;
+    esac;
+
+    next(ped_button_EW) := case
+        pedestrian_EW = WALK : FALSE;
+        TRUE : ped_button_EW;
+    esac;
+
+-- Invariants:
+
+-- Ensure that the traffic lights in both directions cannot be green simultaneously
+INVAR !(traffic_NS = green & traffic_EW = green)
+-- Ensure that pedestrian signals are not active (WALK) in the same direction as green traffic lights
+INVAR !(traffic_NS = green & pedestrian_NS = WALK)
+INVAR !(traffic_EW = green & pedestrian_EW = WALK)
+
+-- LTL Specifications:
+
+-- Safety: Prevent conflict between vehicle green light and pedestrian WALK signal
+LTLSPEC G !(traffic_NS = green & pedestrian_NS = WALK);
+LTLSPEC G !(traffic_EW = green & pedestrian_EW = WALK);
+
+-- Liveness: Ensure WALK signal activation if pedestrian button is pressed
+LTLSPEC G (ped_button_NS -> F (pedestrian_NS = WALK));
+LTLSPEC G (ped_button_EW -> F (pedestrian_EW = WALK));
+
+-- Safety: Prevent both directions from having green lights simultaneously
+LTLSPEC G !(traffic_NS = green & traffic_EW = green);
+
+-- Correct light sequence for North-South
+LTLSPEC G ((traffic_NS = green) -> X (traffic_NS = yellow));
+LTLSPEC G ((traffic_NS = yellow) -> X (traffic_NS = red));
+LTLSPEC G ((traffic_NS = red) -> X (traffic_NS = green));
+
+-- Correct light sequence for East-West
+LTLSPEC G ((traffic_EW = green) -> X (traffic_EW = yellow));
+LTLSPEC G ((traffic_EW = yellow) -> X (traffic_EW = red));
+LTLSPEC G ((traffic_EW = red) -> X (traffic_EW = green));
+
+-- Pedestrian button priority for WALK signal when traffic light is red
+LTLSPEC G ((ped_button_NS & traffic_NS = red) -> F (pedestrian_NS = WALK));
+LTLSPEC G ((ped_button_EW & traffic_EW = red) -> F (pedestrian_EW = WALK));
+
+-- Deadlock freedom: Ensure traffic lights continuously cycle
+LTLSPEC G (traffic_NS = green | traffic_NS = yellow | traffic_NS = red);
+LTLSPEC G (traffic_EW = green | traffic_EW = yellow | traffic_EW = red);
+
+-- LTL Specifications for Pedestrian Countdown:
+
+-- 1. Pedestrian countdown starts at 5 when WALK signal is activated
+LTLSPEC G ((pedestrian_NS = WALK & X(pedestrian_NS = WALK)) -> (pedestrian_countdown_NS = 5));
+LTLSPEC G ((pedestrian_EW = WALK & X(pedestrian_EW = WALK)) -> (pedestrian_countdown_EW = 5));
+
+-- 2. Pedestrian countdown decreases by 1 each step while the signal is WALK
+LTLSPEC G ((pedestrian_NS = WALK & pedestrian_countdown_NS > 0) -> X(pedestrian_countdown_NS = pedestrian_countdown_NS - 1));
+LTLSPEC G ((pedestrian_EW = WALK & pedestrian_countdown_EW > 0) -> X(pedestrian_countdown_EW = pedestrian_countdown_EW - 1));
+
+-- 3. When countdown reaches 0, the signal should transition from WALK to DONT_WALK
+LTLSPEC G ((pedestrian_countdown_NS = 0) -> X(pedestrian_NS = DONT_WALK));
+LTLSPEC G ((pedestrian_countdown_EW = 0) -> X(pedestrian_EW = DONT_WALK));
+
+-- 4. If the pedestrian signal changes to DONT_WALK, the countdown should reset to 5
+LTLSPEC G ((pedestrian_NS = DONT_WALK) -> X(pedestrian_countdown_NS = 5));
+LTLSPEC G ((pedestrian_EW = DONT_WALK) -> X(pedestrian_countdown_EW = 5));
